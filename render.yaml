@@ -7,6 +7,6 @@ services:
       - key: NODE_VERSION
         value: 18
     buildCommand: |
-      npm ci
-      npm run build
-    startCommand: npm start
+      npm ci --workspaces
+      npm run -w frontend build
+    startCommand: node backend/server.js
