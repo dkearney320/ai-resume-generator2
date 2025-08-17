@@ -3,13 +3,16 @@ services:
     name: ai-resume-generator
     env: node
     plan: free
-    # Build the frontend, then install backend deps
+
+    # Build both projects; produce frontend/build for the server to serve
     buildCommand: |
-      npm ci --prefix frontend
-      npm run build --prefix frontend
-      npm ci --prefix backend
-    # Start the Express server that serves the built frontend
+      npm --prefix backend ci
+      npm --prefix frontend ci
+      npm --prefix frontend run build
+
+    # Start the backend server (which serves /frontend/build)
     startCommand: node backend/server.js
+
     envVars:
       - key: NODE_VERSION
-        value: 18
+        value: "18"
