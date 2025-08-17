@@ -3,16 +3,10 @@ services:
     name: ai-resume-generator
     env: node
     plan: free
-
-    # Build both projects; produce frontend/build for the server to serve
-    buildCommand: |
-      npm --prefix backend ci
-      npm --prefix frontend ci
-      npm --prefix frontend run build
-
-    # Start the backend server (which serves /frontend/build)
-    startCommand: node backend/server.js
-
     envVars:
       - key: NODE_VERSION
-        value: "18"
+        value: 18
+    buildCommand: |
+      npm ci
+      npm run build
+    startCommand: npm start

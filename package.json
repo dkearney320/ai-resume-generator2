@@ -1,0 +1,10 @@
+{
+  "name": "ai-resume-generator-monorepo",
+  "private": true,
+  "workspaces": ["frontend", "backend"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "npm -w frontend run build",
+    "start": "node backend/server.js"
+  }
+}
