@@ -3,10 +3,8 @@ services:
     name: ai-resume-generator
     env: node
     plan: free
-    envVars:
-      - key: NODE_VERSION
-        value: 18
+    nodeVersion: 18
     buildCommand: |
-      npm ci --workspaces
-      npm run -w frontend build
-    startCommand: node backend/server.js
+      npm ci
+      npm run build
+    startCommand: npm start

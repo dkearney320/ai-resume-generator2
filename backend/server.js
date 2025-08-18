@@ -1,105 +1,70 @@
 // backend/server.js
 const path = require("path");
 const express = require("express");
+const cors = require("cors");
 
 const app = express();
-
-// --- Basic logging so you can see exactly what's hitting the server ----
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  next();
-});
-
+app.use(cors());
 app.use(express.json());
 
-// ---------------- API: Generate Resume -----------------
-// Accept both POST and GET to be forgiving, but frontend uses POST.
-app.all("/api/generate-resume", (req, res) => {
-  try {
-    // If GET, read from query; if POST, from body.
-    const src = req.method === "GET" ? req.query : req.body;
+// ---------- API ROUTES ----------
+app.post("/api/generate-resume", (req, res) => {
+  const { name = "", email = "", skills = "", experience = "" } = req.body || {};
 
-    const name = (src.name || "").toString();
-    const email = (src.email || "").toString();
+  // Normalize to arrays for a simple demo response
+  const skillsArr = Array.isArray(skills)
+    ? skills
+    : String(skills)
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
 
-    // Normalize skills and experience into arrays
-    const skills = Array.isArray(src.skills)
-      ? src.skills
-      : typeof src.skills === "string"
-      ? src.skills
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
+  const expArr = Array.isArray(experience)
+    ? experience
+    : String(experience)
+        .split("\n")
+        .map(s => s.trim())
+        .filter(Boolean);
 
-    const experience = Array.isArray(src.experience)
-      ? src.experience
-      : typeof src.experience === "string"
-      ? src.experience
-          .split(/\r?\n/)
-          .map((x) => x.trim())
-          .filter(Boolean)
-      : [];
-
-    const summary =
-      name || skills.length || experience.length
-        ? `Professional summary for ${name || "Candidate"} with ${
-            skills.length
-          } skill(s) and ${experience.length} experience bullet(s).`
-        : "Empty input — add your details and try again.";
-
-    // A minimal structured response the frontend can render
-    const payload = {
-      name,
-      email,
-      skills,
-      experience,
-      summary,
-    };
-
-    res.json(payload);
-  } catch (err) {
-    console.error("generate-resume error:", err);
-    res.status(500).json({ error: "Failed to generate resume" });
-  }
+  // Return structured JSON the UI can render
+  return res.json({
+    name,
+    email,
+    skills: skillsArr,
+    experience: expArr,
+    summary: `Generated summary for ${name || "Candidate"} with ${skillsArr.join(", ")}.`
+  });
 });
 
-// ---------------- API: Download Branded PDF -----------------
-// Sends a very small valid PDF without any extra dependencies.
-app.all("/api/downloadBrandedPdf", (req, res) => {
-  try {
-    // A tiny single-page PDF (valid). No extra libs required.
-    // (This just produces a blank page PDF; it’s enough to verify download.)
-    const minimalPdf = Buffer.from(
-      "%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000010 00000 n \n0000000061 00000 n \n0000000114 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n170\n%%EOF",
-      "utf8"
-    );
-
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="resume.pdf"'
-    );
-    res.status(200).send(minimalPdf);
-  } catch (err) {
-    console.error("downloadBrandedPdf error:", err);
-    res.status(500).json({ error: "Failed to generate PDF" });
-  }
+app.post("/api/downloadBrandedPdf", (req, res) => {
+  // Demo: return a tiny PDF so the UI can download something
+  const pdf = Buffer.from(
+    "%PDF-1.1\n1 0 obj\n<<>>\nendobj\n2 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF",
+    "utf8"
+  );
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", 'attachment; filename="resume.pdf"');
+  return res.send(pdf);
 });
 
-// ------------- Static: serve the React build -----------------
+// ---------- STATIC FRONTEND ----------
 const buildDir = path.join(__dirname, "..", "frontend", "build");
 app.use(express.static(buildDir));
 
-// ------------- SPA fallback (safe, no path-to-regexp surprises) -------------
-// Only handle GETs that are NOT `/api/*`. Everything else falls through.
+// Health check
+app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+// ---------- SAFE SPA FALLBACK ----------
+// If the request is NOT for /api/* and NOT a file request (has a dot),
+// serve index.html so the React router can handle it.
 app.get("*", (req, res, next) => {
-  if (req.method !== "GET") return next();
-  if (req.path.startsWith("/api/")) return next();
+  const isApi = req.path.startsWith("/api/");
+  const looksLikeFile = req.path.includes(".");
+  if (isApi || looksLikeFile) return next();
   res.sendFile(path.join(buildDir, "index.html"));
 });
 
-// ------------- Start server -------------
+// ---------- START ----------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`API listening on http://127.0.0.1:${PORT}`);
