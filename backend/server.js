@@ -1,96 +1,106 @@
 // backend/server.js
-const path = require('path');
-const express = require('express');
+const path = require("path");
+const express = require("express");
 
 const app = express();
 
-/* ---------- Basics ---------- */
+// --- Basic logging so you can see exactly what's hitting the server ----
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-/* Tiny request logger (no deps) */
-app.use((req, _res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
-  next();
-});
-
-/* ---------- Serve React build ---------- */
-const buildDir = path.join(__dirname, '..', 'frontend', 'build');
-app.use(express.static(buildDir));
-
-/* ---------- API request logger (critical) ---------- */
-app.use(/^\/api\/.*/i, (req, _res, next) => {
-  console.log('[API HIT]', req.method, req.originalUrl);
-  next();
-});
-
-/* ---------- Simple health ---------- */
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, status: 'API up' });
-});
-
-/* ---------- Example generate ---------- */
-app.post('/api/generate', (req, res) => {
-  res.json({ ok: true, result: { message: 'Generated successfully (placeholder)' } });
-});
-
-/* ---------- Robust PDF endpoints ---------- */
-const pdfPaths = [
-  /^\/api\/download-pdf\/?$/i,
-  /^\/download-pdf\/?$/i,
-  /^\/api\/download[-]?branded[-]?pdf\/?$/i,
-  /^\/download[-]?branded[-]?pdf\/?$/i,
-  /^\/api\/downloadBrandedPdf\/?$/i,
-  /^\/downloadBrandedPdf\/?$/i,
-];
-
-app.all(pdfPaths, async (req, res) => {
+// ---------------- API: Generate Resume -----------------
+// Accept both POST and GET to be forgiving, but frontend uses POST.
+app.all("/api/generate-resume", (req, res) => {
   try {
-    console.log('[PDF ROUTE MATCHED]', req.method, req.originalUrl, 'query:', req.query);
+    // If GET, read from query; if POST, from body.
+    const src = req.method === "GET" ? req.query : req.body;
 
-    const nameFromBody = (req.body && (req.body.name || req.body.fileName)) || '';
-    const nameFromQuery = (req.query && (req.query.name || req.query.fileName)) || '';
-    const safeName = (nameFromBody || nameFromQuery || 'resume').toString();
-    const filename = `${safeName.replace(/\s+/g, '_')}.pdf`;
+    const name = (src.name || "").toString();
+    const email = (src.email || "").toString();
 
-    // Minimal valid PDF
-    const pdfStub = Buffer.from(
-      "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
-        "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n" +
-        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n" +
-        "4 0 obj\n<< /Length 44 >>\nstream\nBT /F1 24 Tf 72 720 Td (Resume PDF Placeholder) Tj ET\nendstream\nendobj\n" +
-        "xref\n0 5\n0000000000 65535 f \n0000000010 00000 n \n0000000061 00000 n \n0000000114 00000 n \n0000000217 00000 n \n" +
-        "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n324\n%%EOF",
-      "utf8"
-    );
+    // Normalize skills and experience into arrays
+    const skills = Array.isArray(src.skills)
+      ? src.skills
+      : typeof src.skills === "string"
+      ? src.skills
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(pdfStub);
+    const experience = Array.isArray(src.experience)
+      ? src.experience
+      : typeof src.experience === "string"
+      ? src.experience
+          .split(/\r?\n/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+      : [];
+
+    const summary =
+      name || skills.length || experience.length
+        ? `Professional summary for ${name || "Candidate"} with ${
+            skills.length
+          } skill(s) and ${experience.length} experience bullet(s).`
+        : "Empty input — add your details and try again.";
+
+    // A minimal structured response the frontend can render
+    const payload = {
+      name,
+      email,
+      skills,
+      experience,
+      summary,
+    };
+
+    res.json(payload);
   } catch (err) {
-    console.error('download-pdf error:', err);
-    res.status(500).json({ error: 'Failed to create PDF' });
+    console.error("generate-resume error:", err);
+    res.status(500).json({ error: "Failed to generate resume" });
   }
 });
 
-/* ---------- API catch-all 404 with path ---------- */
-app.all(/^\/api\/.*$/i, (req, res) => {
-  console.warn('[API UNMATCHED]', req.method, req.originalUrl);
-  res.status(404).json({
-    error: 'No API route matched on server',
-    path: req.originalUrl,
-    method: req.method,
-  });
+// ---------------- API: Download Branded PDF -----------------
+// Sends a very small valid PDF without any extra dependencies.
+app.all("/api/downloadBrandedPdf", (req, res) => {
+  try {
+    // A tiny single-page PDF (valid). No extra libs required.
+    // (This just produces a blank page PDF; it’s enough to verify download.)
+    const minimalPdf = Buffer.from(
+      "%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000010 00000 n \n0000000061 00000 n \n0000000114 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n170\n%%EOF",
+      "utf8"
+    );
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="resume.pdf"'
+    );
+    res.status(200).send(minimalPdf);
+  } catch (err) {
+    console.error("downloadBrandedPdf error:", err);
+    res.status(500).json({ error: "Failed to generate PDF" });
+  }
 });
 
-/* ---------- SPA fallback (safe regex) ---------- */
-app.get(/^\/(?!api(?:$|\/)).*/i, (_req, res) => {
-  res.sendFile(path.join(buildDir, 'index.html'));
+// ------------- Static: serve the React build -----------------
+const buildDir = path.join(__dirname, "..", "frontend", "build");
+app.use(express.static(buildDir));
+
+// ------------- SPA fallback (safe, no path-to-regexp surprises) -------------
+// Only handle GETs that are NOT `/api/*`. Everything else falls through.
+app.get("*", (req, res, next) => {
+  if (req.method !== "GET") return next();
+  if (req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(buildDir, "index.html"));
 });
 
-/* ---------- Start ---------- */
-const PORT = process.env.PORT || 3001;
+// ------------- Start server -------------
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`API listening on http://127.0.0.1:${PORT}`);
-  console.log('NODE_ENV =', process.env.NODE_ENV || 'development');
 });
