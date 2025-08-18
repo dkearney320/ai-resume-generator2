@@ -1,75 +1,38 @@
 // backend/server.js
-const path = require("path");
-const express = require("express");
+const path = require('path');
+const express = require('express');
 
 const app = express();
 
-// --- Middleware ---
-app.use(express.json({ limit: "2mb" }));
+// ---------- Middleware ----------
+app.use(express.json()); // Parse JSON bodies
 
-// (Optional) very light CORS for local dev; not needed on Render since
-// frontend and backend are same origin in production.
-// const cors = require("cors");
-// app.use(cors());
+// ---------- Static (React build) ----------
+const buildDir = path.join(__dirname, '..', 'frontend', 'build');
+app.use(express.static(buildDir));
 
-// --- API ROUTES ---
-
-// Health check to quickly verify API is reachable in prod:
-// Open https://<your-app>.onrender.com/api/health
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true, ts: Date.now() });
+// ---------- Simple API health ----------
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, status: 'API up' });
 });
 
-// This is the route your frontend calls from ResumeForm.js
-app.post("/api/generate-resume", async (req, res) => {
-  try {
-    const { name, email, skills, experience } = req.body;
-
-    // skills may arrive as a string or array depending on your UI
-    const skillsArr = Array.isArray(skills)
-      ? skills
-      : (skills || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-    const expArr = Array.isArray(experience)
-      ? experience
-      : (experience || "")
-          .split("\n")
-          .map((x) => x.trim())
-          .filter(Boolean);
-
-    // TODO: Replace this with your real AI logic.
-    // For now, return a minimal structured resume object so the UI shows something.
-    const summary =
-      `Results-driven professional with skills in ${skillsArr.join(", ")}. ` +
-      `Experience highlights: ${expArr.slice(0, 3).join("; ")}.`;
-
-    const mockResume = {
-      name: name || "Anonymous",
-      email: email || "",
-      skills: skillsArr,
-      experience: expArr,
-      summary,
-    };
-
-    res.json(mockResume);
-  } catch (err) {
-    console.error("generate-resume error:", err);
-    res.status(500).json({ error: "Failed to generate resume" });
-  }
+// ---------- Example generate endpoint (safe placeholder) ----------
+app.post('/api/generate', (req, res) => {
+  // In your app, this would call the AI/generation logic.
+  // Keeping a no-op so the button works while backend is simple.
+  res.json({ ok: true, result: { message: 'Generated successfully (placeholder)' } });
 });
 
-// Simple PDF stream so the Download button works.
-// Replace with your real PDF generation (e.g., pdfkit, puppeteer, etc.).
-app.post("/api/download-pdf", async (req, res) => {
+// ---------- Download PDF (accept both paths + methods) ----------
+app.all(['/api/download-pdf', '/download-pdf'], async (req, res) => {
   try {
-    const { name = "resume" } = req.body || {};
-    const filename = `${String(name).replace(/\s+/g, "_")}.pdf`;
+    // Support name from POST body or GET query
+    const nameFromBody = (req.body && req.body.name) || '';
+    const nameFromQuery = (req.query && req.query.name) || '';
+    const safeName = (nameFromBody || nameFromQuery || 'resume').toString();
+    const filename = `${safeName.replace(/\s+/g, '_')}.pdf`;
 
-    // A minimal PDF buffer (valid PDF header/footer). This is just a stub.
-    // Use a library in a real app.
+    // Minimal placeholder PDF buffer. Replace with real PDF generation when ready.
     const pdfStub = Buffer.from(
       "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
         "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n" +
@@ -80,27 +43,25 @@ app.post("/api/download-pdf", async (req, res) => {
       "utf8"
     );
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdfStub);
   } catch (err) {
-    console.error("download-pdf error:", err);
-    res.status(500).json({ error: "Failed to create PDF" });
+    console.error('download-pdf error:', err);
+    res.status(500).json({ error: 'Failed to create PDF' });
   }
 });
 
-// --- Static hosting of React build ---
-const buildDir = path.join(__dirname, "..", "frontend", "build");
-app.use(express.static(buildDir));
-
-// --- SPA fallback with REGEX (avoids path-to-regexp crash) ---
-app.get(/^\/(?!api\/).*/, (req, res) => {
-  res.sendFile(path.join(buildDir, "index.html"));
+// ---------- SPA fallback (safe RegExp) ----------
+// Serve index.html for any non-API route (so client-side routing works).
+// This regex literally means: paths starting with "/" that do NOT begin with "api" or "api/".
+app.get(/^\/(?!api(?:$|\/)).*/, (req, res) => {
+  res.sendFile(path.join(buildDir, 'index.html'));
 });
 
-// --- Startup ---
+// ---------- Start server ----------
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`API listening on http://127.0.0.1:${PORT}`);
-  console.log("NODE_ENV =", process.env.NODE_ENV);
+  console.log('NODE_ENV =', process.env.NODE_ENV || 'development');
 });
