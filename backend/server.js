@@ -4,35 +4,46 @@ const express = require('express');
 
 const app = express();
 
-// ---------- Middleware ----------
-app.use(express.json()); // Parse JSON bodies
+// ---------- Body parsers ----------
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ---------- Static (React build) ----------
 const buildDir = path.join(__dirname, '..', 'frontend', 'build');
 app.use(express.static(buildDir));
 
-// ---------- Simple API health ----------
+// ---------- Health ----------
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, status: 'API up' });
 });
 
-// ---------- Example generate endpoint (safe placeholder) ----------
+// ---------- Example generate (placeholder) ----------
 app.post('/api/generate', (req, res) => {
-  // In your app, this would call the AI/generation logic.
-  // Keeping a no-op so the button works while backend is simple.
   res.json({ ok: true, result: { message: 'Generated successfully (placeholder)' } });
 });
 
-// ---------- Download PDF (accept both paths + methods) ----------
-app.all(['/api/download-pdf', '/download-pdf'], async (req, res) => {
+// ---------- Robust PDF endpoint ----------
+// Accept common variants, both with and without /api, dashes or camelCase, and optional trailing slash.
+// Case-insensitive via /i
+const pdfPaths = [
+  /^\/api\/download-pdf\/?$/i,
+  /^\/download-pdf\/?$/i,
+  /^\/api\/download[-]?branded[-]?pdf\/?$/i,
+  /^\/download[-]?branded[-]?pdf\/?$/i,
+  /^\/api\/downloadBrandedPdf\/?$/i,
+  /^\/downloadBrandedPdf\/?$/i,
+];
+
+app.all(pdfPaths, async (req, res) => {
   try {
-    // Support name from POST body or GET query
-    const nameFromBody = (req.body && req.body.name) || '';
-    const nameFromQuery = (req.query && req.query.name) || '';
+    console.log('PDF route hit:', req.method, req.path, 'query:', req.query);
+
+    const nameFromBody = (req.body && (req.body.name || req.body.fileName)) || '';
+    const nameFromQuery = (req.query && (req.query.name || req.query.fileName)) || '';
     const safeName = (nameFromBody || nameFromQuery || 'resume').toString();
     const filename = `${safeName.replace(/\s+/g, '_')}.pdf`;
 
-    // Minimal placeholder PDF buffer. Replace with real PDF generation when ready.
+    // Very small valid PDF placeholder (replace with real generation later)
     const pdfStub = Buffer.from(
       "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
         "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n" +
@@ -52,14 +63,12 @@ app.all(['/api/download-pdf', '/download-pdf'], async (req, res) => {
   }
 });
 
-// ---------- SPA fallback (safe RegExp) ----------
-// Serve index.html for any non-API route (so client-side routing works).
-// This regex literally means: paths starting with "/" that do NOT begin with "api" or "api/".
-app.get(/^\/(?!api(?:$|\/)).*/, (req, res) => {
+// ---------- SPA fallback (safe regex) ----------
+app.get(/^\/(?!api(?:$|\/)).*/i, (_req, res) => {
   res.sendFile(path.join(buildDir, 'index.html'));
 });
 
-// ---------- Start server ----------
+// ---------- Start ----------
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`API listening on http://127.0.0.1:${PORT}`);
