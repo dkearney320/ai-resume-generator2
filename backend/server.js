@@ -1,21 +1,24 @@
 // backend/server.js
 const path = require('path');
 const express = require('express');
-const morgan = require('morgan');
 
 const app = express();
 
 /* ---------- Basics ---------- */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan('tiny')); // logs every request line to stdout
+
+/* Tiny request logger (no deps) */
+app.use((req, _res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 /* ---------- Serve React build ---------- */
 const buildDir = path.join(__dirname, '..', 'frontend', 'build');
 app.use(express.static(buildDir));
 
 /* ---------- API request logger (critical) ---------- */
-// This will log EVERY request that starts with /api (no matter what)
 app.use(/^\/api\/.*/i, (req, _res, next) => {
   console.log('[API HIT]', req.method, req.originalUrl);
   next();
@@ -32,7 +35,6 @@ app.post('/api/generate', (req, res) => {
 });
 
 /* ---------- Robust PDF endpoints ---------- */
-// Accept a handful of common variants, case-insensitive, optional trailing slash
 const pdfPaths = [
   /^\/api\/download-pdf\/?$/i,
   /^\/download-pdf\/?$/i,
@@ -51,7 +53,7 @@ app.all(pdfPaths, async (req, res) => {
     const safeName = (nameFromBody || nameFromQuery || 'resume').toString();
     const filename = `${safeName.replace(/\s+/g, '_')}.pdf`;
 
-    // Tiny valid PDF placeholder
+    // Minimal valid PDF
     const pdfStub = Buffer.from(
       "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
         "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n" +
@@ -71,7 +73,7 @@ app.all(pdfPaths, async (req, res) => {
   }
 });
 
-/* ---------- API catch-all: logs & returns JSON 404 with the exact path ---------- */
+/* ---------- API catch-all 404 with path ---------- */
 app.all(/^\/api\/.*$/i, (req, res) => {
   console.warn('[API UNMATCHED]', req.method, req.originalUrl);
   res.status(404).json({
