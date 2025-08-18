@@ -1,30 +1,38 @@
 // backend/server.js
 const path = require('path');
 const express = require('express');
+const morgan = require('morgan');
 
 const app = express();
 
-// ---------- Body parsers ----------
+/* ---------- Basics ---------- */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan('tiny')); // logs every request line to stdout
 
-// ---------- Static (React build) ----------
+/* ---------- Serve React build ---------- */
 const buildDir = path.join(__dirname, '..', 'frontend', 'build');
 app.use(express.static(buildDir));
 
-// ---------- Health ----------
+/* ---------- API request logger (critical) ---------- */
+// This will log EVERY request that starts with /api (no matter what)
+app.use(/^\/api\/.*/i, (req, _res, next) => {
+  console.log('[API HIT]', req.method, req.originalUrl);
+  next();
+});
+
+/* ---------- Simple health ---------- */
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, status: 'API up' });
 });
 
-// ---------- Example generate (placeholder) ----------
+/* ---------- Example generate ---------- */
 app.post('/api/generate', (req, res) => {
   res.json({ ok: true, result: { message: 'Generated successfully (placeholder)' } });
 });
 
-// ---------- Robust PDF endpoint ----------
-// Accept common variants, both with and without /api, dashes or camelCase, and optional trailing slash.
-// Case-insensitive via /i
+/* ---------- Robust PDF endpoints ---------- */
+// Accept a handful of common variants, case-insensitive, optional trailing slash
 const pdfPaths = [
   /^\/api\/download-pdf\/?$/i,
   /^\/download-pdf\/?$/i,
@@ -36,14 +44,14 @@ const pdfPaths = [
 
 app.all(pdfPaths, async (req, res) => {
   try {
-    console.log('PDF route hit:', req.method, req.path, 'query:', req.query);
+    console.log('[PDF ROUTE MATCHED]', req.method, req.originalUrl, 'query:', req.query);
 
     const nameFromBody = (req.body && (req.body.name || req.body.fileName)) || '';
     const nameFromQuery = (req.query && (req.query.name || req.query.fileName)) || '';
     const safeName = (nameFromBody || nameFromQuery || 'resume').toString();
     const filename = `${safeName.replace(/\s+/g, '_')}.pdf`;
 
-    // Very small valid PDF placeholder (replace with real generation later)
+    // Tiny valid PDF placeholder
     const pdfStub = Buffer.from(
       "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
         "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n" +
@@ -63,12 +71,22 @@ app.all(pdfPaths, async (req, res) => {
   }
 });
 
-// ---------- SPA fallback (safe regex) ----------
+/* ---------- API catch-all: logs & returns JSON 404 with the exact path ---------- */
+app.all(/^\/api\/.*$/i, (req, res) => {
+  console.warn('[API UNMATCHED]', req.method, req.originalUrl);
+  res.status(404).json({
+    error: 'No API route matched on server',
+    path: req.originalUrl,
+    method: req.method,
+  });
+});
+
+/* ---------- SPA fallback (safe regex) ---------- */
 app.get(/^\/(?!api(?:$|\/)).*/i, (_req, res) => {
   res.sendFile(path.join(buildDir, 'index.html'));
 });
 
-// ---------- Start ----------
+/* ---------- Start ---------- */
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`API listening on http://127.0.0.1:${PORT}`);
