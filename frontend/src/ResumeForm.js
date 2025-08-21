@@ -10,7 +10,7 @@ export default function ResumeForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Helper to POST JSON with a RELATIVE path (works on Render + local dev)
+  // Helper to POST JSON to a relative API path so it works on Render
   async function postJson(path, payload) {
     const res = await fetch(path, {
       method: "POST",
@@ -18,31 +18,43 @@ export default function ResumeForm() {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`${res.status} ${res.statusText}${text ? ` - ${text}` : ""}`);
+      // Try to pull back any JSON error, else text, else status text
+      let message = `${res.status} ${res.statusText}`;
+      try {
+        const j = await res.json();
+        if (j?.error) message += ` - ${j.error}`;
+      } catch {
+        const t = await res.text().catch(() => "");
+        if (t) message += ` - ${t}`;
+      }
+      throw new Error(message);
     }
     return res.json();
   }
 
   async function handleGenerate(e) {
     e.preventDefault();
-    setLoading(true);
     setError("");
     setResult(null);
+    setLoading(true);
 
     try {
-      const data = await postJson("/api/generate-resume", {
+      const payload = {
         name,
         email,
-        skills: skills
+        // backend accepts arrays; split the inputs here
+        skills: (skills || "")
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
-        experience: experience
+        experience: (experience || "")
           .split("\n")
           .map((x) => x.trim())
           .filter(Boolean),
-      });
+      };
+
+      // 👇 IMPORTANT: relative path so it works on Render behind one domain
+      const data = await postJson("/api/generate-resume", payload);
       setResult(data);
     } catch (err) {
       setError(`Error: Request failed with status code ${err.message}`);
@@ -54,13 +66,14 @@ export default function ResumeForm() {
   async function handleDownloadBranded() {
     try {
       setError("");
-      // EXACT route expected by your backend:
       const res = await fetch("/api/downloadBrandedPdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, skills, experience }),
       });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        throw new Error(`${res.status} ${res.statusText}`);
+      }
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -77,7 +90,7 @@ export default function ResumeForm() {
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+    <div style={{ maxWidth: 950, margin: "0 auto", padding: 24 }}>
       <h1 style={{ textAlign: "center" }}>AI Resume Generator</h1>
       <h2 style={{ textAlign: "center" }}>Generate Your Resume</h2>
 
@@ -91,10 +104,18 @@ export default function ResumeForm() {
           }}
         >
           <label style={{ alignSelf: "center" }}>Name:</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Jane Doe"
+          />
 
           <label style={{ alignSelf: "center" }}>Email:</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="jane@example.com"
+          />
 
           <label style={{ alignSelf: "center" }}>Skills:</label>
           <input
@@ -116,6 +137,7 @@ export default function ResumeForm() {
           <button type="submit" disabled={loading}>
             {loading ? "Generating..." : "Generate Resume"}
           </button>
+
           <button
             type="button"
             onClick={handleDownloadBranded}
@@ -127,7 +149,11 @@ export default function ResumeForm() {
         </div>
       </form>
 
-      {error && <p style={{ color: "red", marginTop: 16 }}>{error}</p>}
+      {error && (
+        <p style={{ color: "red", marginTop: 16 }}>
+          {error}
+        </p>
+      )}
 
       {result && (
         <div
@@ -138,6 +164,8 @@ export default function ResumeForm() {
             borderRadius: 8,
           }}
         >
+          {/* If backend ever sends HTML use dangerouslySetInnerHTML;
+              otherwise show structured JSON */}
           {"html" in result ? (
             <div dangerouslySetInnerHTML={{ __html: result.html }} />
           ) : (
@@ -153,8 +181,8 @@ export default function ResumeForm() {
               </ul>
               <h4>Experience</h4>
               <ul>
-                {(Array.isArray(result.experience) ? result.experience : []).map((b, i) => (
-                  <li key={i}>{typeof b === "string" ? b : (b?.bullets || []).join(" ")}</li>
+                {(result.experience || []).map((b, i) => (
+                  <li key={i}>{b}</li>
                 ))}
               </ul>
               {result.summary && (

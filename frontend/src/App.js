@@ -1,15 +1,7 @@
-// src/App.js
-import React from 'react';
-import './App.css';  // Import styles
-import ResumeForm from './ResumeForm';  // Correct import of ResumeForm
+// frontend/src/App.js
+import React from "react";
+import ResumeForm from "./ResumeForm";
 
-function App() {
-  return (
-    <div className="App">
-      <h1>AI Resume Generator</h1>
-      <ResumeForm />  {/* Render ResumeForm here */}
-    </div>
-  );
+export default function App() {
+  return <ResumeForm />;
 }
-
-export default App;
