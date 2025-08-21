@@ -4,68 +4,67 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
+const PORT = process.env.PORT || 10000;
+
 app.use(cors());
 app.use(express.json());
 
-// ---------- API ROUTES ----------
+// ---------- API ROUTES (must come BEFORE static + fallback) ----------
 app.post("/api/generate-resume", (req, res) => {
-  const { name = "", email = "", skills = "", experience = "" } = req.body || {};
+  const { name = "", email = "", skills = [], experience = [] } = req.body || {};
 
-  // Normalize to arrays for a simple demo response
-  const skillsArr = Array.isArray(skills)
-    ? skills
-    : String(skills)
-        .split(",")
-        .map(s => s.trim())
-        .filter(Boolean);
-
-  const expArr = Array.isArray(experience)
-    ? experience
-    : String(experience)
-        .split("\n")
-        .map(s => s.trim())
-        .filter(Boolean);
-
-  // Return structured JSON the UI can render
-  return res.json({
+  // Return a simple JSON structure the frontend can render
+  res.json({
+    ok: true,
     name,
     email,
-    skills: skillsArr,
-    experience: expArr,
-    summary: `Generated summary for ${name || "Candidate"} with ${skillsArr.join(", ")}.`
+    skills: Array.isArray(skills) ? skills : String(skills).split(",").map(s => s.trim()).filter(Boolean),
+    experience: Array.isArray(experience)
+      ? experience
+      : String(experience).split(/\r?\n/).map(s => s.trim()).filter(Boolean),
+    summary: `Generated summary for ${name || "candidate"}.`
   });
 });
 
-app.post("/api/downloadBrandedPdf", (req, res) => {
-  // Demo: return a tiny PDF so the UI can download something
-  const pdf = Buffer.from(
-    "%PDF-1.1\n1 0 obj\n<<>>\nendobj\n2 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF",
-    "utf8"
-  );
+app.post("/api/downloadBrandedPdf", async (req, res) => {
+  // For now, just return a tiny text file so the download button works.
+  // Swap this for real PDF generation when you’re ready.
+  const content = `Branded PDF placeholder for ${req.body?.name || "candidate"}`;
+  const buff = Buffer.from(content, "utf8");
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", 'attachment; filename="resume.pdf"');
-  return res.send(pdf);
+  return res.send(buff);
 });
 
-// ---------- STATIC FRONTEND ----------
+// Health check (handy on Render)
+app.get("/api/healthz", (req, res) => res.json({ ok: true }));
+
+// ---------- STATIC REACT BUILD ----------
 const buildDir = path.join(__dirname, "..", "frontend", "build");
 app.use(express.static(buildDir));
 
-// Health check
-app.get("/api/health", (req, res) => res.json({ ok: true }));
-
 // ---------- SAFE SPA FALLBACK ----------
-// If the request is NOT for /api/* and NOT a file request (has a dot),
-// serve index.html so the React router can handle it.
-app.get("*", (req, res, next) => {
-  const isApi = req.path.startsWith("/api/");
-  const looksLikeFile = req.path.includes(".");
-  if (isApi || looksLikeFile) return next();
+// Serve index.html for non-API, non-file-like paths (no dots), so client routing works.
+app.get(/^\/(?!api\/)(?!.*\.\w+$).*$/, (req, res) => {
   res.sendFile(path.join(buildDir, "index.html"));
 });
 
-// ---------- START ----------
-const PORT = process.env.PORT || 10000;
+// ---------- DEBUG: log mounted routes ----------
+function listRoutes() {
+  const routes = [];
+  app._router.stack.forEach((layer) => {
+    if (layer.route && layer.route.path) {
+      const methods = Object.keys(layer.route.methods)
+        .filter((m) => layer.route.methods[m])
+        .map((m) => m.toUpperCase())
+        .join(",");
+      routes.push(`${methods.padEnd(7)} ${layer.route.path}`);
+    }
+  });
+  console.log("Mounted routes:\n" + routes.sort().join("\n"));
+}
+
 app.listen(PORT, () => {
   console.log(`API listening on http://127.0.0.1:${PORT}`);
+  listRoutes();
 });
