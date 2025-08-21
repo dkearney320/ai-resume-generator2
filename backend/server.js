@@ -6,65 +6,76 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Basic Middleware
 app.use(cors());
 app.use(express.json());
 
-// ---------- API ROUTES (must come BEFORE static + fallback) ----------
+// Health check
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+// POST /api/generate-resume
 app.post("/api/generate-resume", (req, res) => {
   const { name = "", email = "", skills = [], experience = [] } = req.body || {};
+  if (!name || !email) {
+    return res
+      .status(400)
+      .json({ error: "Please provide both name and email" });
+  }
 
-  // Return a simple JSON structure the frontend can render
-  res.json({
-    ok: true,
+  const skillsArr = Array.isArray(skills)
+    ? skills
+    : String(skills)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+  const expArr = Array.isArray(experience)
+    ? experience
+    : String(experience)
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+  return res.json({
     name,
     email,
-    skills: Array.isArray(skills) ? skills : String(skills).split(",").map(s => s.trim()).filter(Boolean),
-    experience: Array.isArray(experience)
-      ? experience
-      : String(experience).split(/\r?\n/).map(s => s.trim()).filter(Boolean),
-    summary: `Generated summary for ${name || "candidate"}.`
+    skills: skillsArr,
+    experience: expArr,
+    summary: `Summary for ${name} with ${skillsArr.length} skill(s)`,
   });
 });
 
-app.post("/api/downloadBrandedPdf", async (req, res) => {
-  // For now, just return a tiny text file so the download button works.
-  // Swap this for real PDF generation when you’re ready.
-  const content = `Branded PDF placeholder for ${req.body?.name || "candidate"}`;
-  const buff = Buffer.from(content, "utf8");
+// POST /api/downloadBrandedPdf
+app.post("/api/downloadBrandedPdf", (req, res) => {
+  const filename = `${(req.body?.name || "resume").replace(/\s+/g, "_")}.pdf`;
+  const placeholderPdf = Buffer.from(
+    "PDF placeholder for " + filename,
+    "utf8"
+  );
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", 'attachment; filename="resume.pdf"');
-  return res.send(buff);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  return res.send(placeholderPdf);
 });
 
-// Health check (handy on Render)
-app.get("/api/healthz", (req, res) => res.json({ ok: true }));
-
-// ---------- STATIC REACT BUILD ----------
+// Serve React build
 const buildDir = path.join(__dirname, "..", "frontend", "build");
 app.use(express.static(buildDir));
 
-// ---------- SAFE SPA FALLBACK ----------
-// Serve index.html for non-API, non-file-like paths (no dots), so client routing works.
-app.get(/^\/(?!api\/)(?!.*\.\w+$).*$/, (req, res) => {
+// Safe SPA fallback: non-API, non-file paths go to index.html
+app.get(/^\/(?!api\/)(?!.*\.\w+$).*/, (_req, res) => {
   res.sendFile(path.join(buildDir, "index.html"));
 });
 
-// ---------- DEBUG: log mounted routes ----------
-function listRoutes() {
-  const routes = [];
-  app._router.stack.forEach((layer) => {
-    if (layer.route && layer.route.path) {
-      const methods = Object.keys(layer.route.methods)
-        .filter((m) => layer.route.methods[m])
-        .map((m) => m.toUpperCase())
-        .join(",");
-      routes.push(`${methods.padEnd(7)} ${layer.route.path}`);
-    }
+// Catch-all for unmatched API paths (404 JSON)
+app.all("/api/*", (req, res) => {
+  res.status(404).json({
+    error: "No API route matched on server",
+    path: req.path,
+    method: req.method,
   });
-  console.log("Mounted routes:\n" + routes.sort().join("\n"));
-}
+});
 
+// Start server
 app.listen(PORT, () => {
-  console.log(`API listening on http://127.0.0.1:${PORT}`);
-  listRoutes();
+  console.log(`Listening on http://127.0.0.1:${PORT}`);
 });
